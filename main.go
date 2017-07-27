@@ -26,6 +26,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
 )
 
 var (
@@ -72,7 +73,8 @@ func readHandler(w http.ResponseWriter, r *http.Request) {
 	err = stmt.QueryRow(user).Scan(&data)
 	switch {
 	case err == sql.ErrNoRows:
-		result["error"] = "No user with that ID."
+		result["status"] = "ok"
+		result["info"] = "No user with that ID."
 	case err != nil:
 		result["error"] = err.Error()
 	default:
@@ -95,7 +97,8 @@ func writeHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	var userid []byte
 	err = stmt.QueryRow(user).Scan(&userid)
-	data := r.FormValue("data")
+	data := strings.Replace(r.FormValue("data"), " ", "+", -1)
+	fmt.Println(data)
 	if err == sql.ErrNoRows {
 		result["action"] = "INSERT"
 		stmt, err = db.Prepare("INSERT INTO `domains` (userid, data) VALUES(?, ?)")
@@ -150,13 +153,14 @@ func main() {
 	fmt.Println(fmt.Sprintf("Starting secure web server on port %d ...", Port))
 	mux := http.NewServeMux()
 	cfg := &tls.Config{
-		MinVersion:               tls.VersionTLS12,
+		MinVersion:               tls.VersionTLS10,
 		CurvePreferences:         []tls.CurveID{tls.CurveP521, tls.CurveP384, tls.CurveP256},
 		PreferServerCipherSuites: true,
 		CipherSuites: []uint16{
 			tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
 			tls.TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA,
 			tls.TLS_RSA_WITH_AES_256_GCM_SHA384,
+			tls.TLS_RSA_WITH_AES_128_CBC_SHA256,
 			tls.TLS_RSA_WITH_AES_256_CBC_SHA,
 		},
 	}

@@ -5,4 +5,5 @@ openssl req -x509 -nodes \
   -keyout ./cert/server.rsa.key \
   -out ./cert/server.rsa.crt \
   -days 3650 \
-  -config ./cert/openssl.cnf -batch
+  -config ./cert/openssl.cnf \
+  -batch
