@@ -42,9 +42,9 @@ type Page struct {
 	User string
 }
 
-func sendResponse(w http.ResponseWriter, result map[string]string) {
+func sendResponse(w http.ResponseWriter, result map[string]interface{}) {
 	var response []byte
-	if len(result["error"]) > 0 {
+	if result["error"] != nil {
 		result["status"] = "error"
 	}
 	response, err := json.Marshal(result)
@@ -63,7 +63,7 @@ func indexHandler(w http.ResponseWriter, r *http.Request) {
 
 func readHandler(w http.ResponseWriter, r *http.Request) {
 	user, _, _ := r.BasicAuth()
-	result := make(map[string]string)
+	result := make(map[string]interface{})
 	stmt, err := db.Prepare("SELECT `data` FROM `domains` WHERE `userid` = ?")
 	if err != nil {
 		result["error"] = err.Error()
@@ -80,7 +80,7 @@ func readHandler(w http.ResponseWriter, r *http.Request) {
 		result["status"] = "ok"
 	}
 	w.Header().Add("Content-Type", "application/json")
-	if len(result["error"]) > 0 {
+	if result["error"] != nil {
 		result["status"] = "error"
 	}
 	sendResponse(w, result)
@@ -88,14 +88,14 @@ func readHandler(w http.ResponseWriter, r *http.Request) {
 
 func writeHandler(w http.ResponseWriter, r *http.Request) {
 	user, _, _ := r.BasicAuth()
-	data := r.FormValue("data")
-	result := make(map[string]string)
-	stmt, err := db.Prepare("SELECT `userid`, `data` FROM `domains` WHERE `userid` = ?")
+	result := make(map[string]interface{})
+	stmt, err := db.Prepare("SELECT `userid` FROM `domains` WHERE `userid` = ?")
 	if err != nil {
 		result["error"] = err.Error()
 	}
 	var userid []byte
-	err = stmt.QueryRow(user).Scan(&userid, &data)
+	err = stmt.QueryRow(user).Scan(&userid)
+	data := r.FormValue("data")
 	if err == sql.ErrNoRows {
 		result["action"] = "INSERT"
 		stmt, err = db.Prepare("INSERT INTO `domains` (userid, data) VALUES(?, ?)")
@@ -106,9 +106,19 @@ func writeHandler(w http.ResponseWriter, r *http.Request) {
 	} else {
 		result["action"] = "UPDATE"
 		stmt, err = db.Prepare("UPDATE `domains` SET `data` = ? WHERE `userid` = ?")
-		_, err = stmt.Exec(data, user)
 		if err != nil {
 			result["error"] = err.Error()
+		} else {
+			res, err := stmt.Exec(data, user)
+			if err != nil {
+				result["error"] = err.Error()
+			} else {
+				fmt.Println(r.FormValue("data"), user)
+				result["rowsaffected"], err = res.RowsAffected()
+				if err != nil {
+					result["error"] = err.Error()
+				}
+			}
 		}
 	}
 	sendResponse(w, result)
