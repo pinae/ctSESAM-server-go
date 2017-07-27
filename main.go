@@ -125,6 +125,9 @@ func writeHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func deleteHandler(w http.ResponseWriter, r *http.Request) {
+	result := make(map[string]interface{})
+	result["action"] = "not implemented yet"
+	sendResponse(w, result)
 }
 
 func main() {
