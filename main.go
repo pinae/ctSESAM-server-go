@@ -46,6 +46,23 @@ func indexHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func readHandler(w http.ResponseWriter, r *http.Request) {
+	user, _, _ := r.BasicAuth()
+	stmt, err := sql.Prepare("SELECT * FROM `domains` WHERE `userid` = ?")
+	if err != nil {
+		log.Fatal(err)
+	}
+	rows, err = stmt.Query(user)
+	if err != nil {
+		log.Fatal(err)
+	}
+	var user string
+	var blob []byte
+	for rows.Next() {
+		err = rows.Scan(&uid, &blob)
+		fmt.Println(user, blob)
+	}
+	rows.Close()
+	db.Close()
 }
 
 func writeHandler(w http.ResponseWriter, r *http.Request) {
