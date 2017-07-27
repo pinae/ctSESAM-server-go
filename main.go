@@ -18,6 +18,8 @@ package main
 
 import (
 	"crypto/tls"
+	"database/sql"
+	"encoding/json"
 	"fmt"
 	_ "github.com/mattn/go-sqlite3"
 	"html/template"
@@ -27,9 +29,12 @@ import (
 )
 
 var (
-	Realm           = "c't SESAM"
-	Port            = 8088
-	CredentialsFile = ".htpasswd"
+	Realm                   = "c't SESAM"
+	Version                 = "0.0.1-DEV"
+	Port                    = 8088
+	CredentialsFile         = "./.htpasswd"
+	DatabaseFile            = "./ctsesam.sqlite.db"
+	db              *sql.DB = nil
 )
 
 type Page struct {
@@ -37,49 +42,95 @@ type Page struct {
 	User string
 }
 
+func sendResponse(w http.ResponseWriter, result map[string]string) {
+	var response []byte
+	if len(result["error"]) > 0 {
+		result["status"] = "error"
+	}
+	response, err := json.Marshal(result)
+	if err != nil {
+		log.Fatal(err)
+	}
+	w.Write(response)
+}
+
 func indexHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Add("Strict-Transport-Security", "max-age=63072000; includeSubDomains")
 	user, _, _ := r.BasicAuth()
-	p := &Page{Host: r.Host, User: user}
+	p := &Page{r.Host, user}
 	t, _ := template.ParseFiles("templates/default.tpl.html")
 	t.Execute(w, p)
 }
 
 func readHandler(w http.ResponseWriter, r *http.Request) {
 	user, _, _ := r.BasicAuth()
-	stmt, err := sql.Prepare("SELECT * FROM `domains` WHERE `userid` = ?")
+	result := make(map[string]string)
+	stmt, err := db.Prepare("SELECT `data` FROM `domains` WHERE `userid` = ?")
 	if err != nil {
-		log.Fatal(err)
+		result["error"] = err.Error()
 	}
-	rows, err = stmt.Query(user)
-	if err != nil {
-		log.Fatal(err)
+	var data []byte
+	err = stmt.QueryRow(user).Scan(&data)
+	switch {
+	case err == sql.ErrNoRows:
+		result["error"] = "No user with that ID."
+	case err != nil:
+		result["error"] = err.Error()
+	default:
+		result["result"] = string(data)
+		result["status"] = "ok"
 	}
-	var user string
-	var blob []byte
-	for rows.Next() {
-		err = rows.Scan(&uid, &blob)
-		fmt.Println(user, blob)
+	w.Header().Add("Content-Type", "application/json")
+	if len(result["error"]) > 0 {
+		result["status"] = "error"
 	}
-	rows.Close()
-	db.Close()
+	sendResponse(w, result)
 }
 
 func writeHandler(w http.ResponseWriter, r *http.Request) {
+	user, _, _ := r.BasicAuth()
+	data := r.FormValue("data")
+	result := make(map[string]string)
+	stmt, err := db.Prepare("SELECT `userid`, `data` FROM `domains` WHERE `userid` = ?")
+	if err != nil {
+		result["error"] = err.Error()
+	}
+	var userid []byte
+	err = stmt.QueryRow(user).Scan(&userid, &data)
+	if err == sql.ErrNoRows {
+		result["action"] = "INSERT"
+		stmt, err = db.Prepare("INSERT INTO `domains` (userid, data) VALUES(?, ?)")
+		_, err = stmt.Exec(user, data)
+		if err != nil {
+			result["error"] = err.Error()
+		}
+	} else {
+		result["action"] = "UPDATE"
+		stmt, err = db.Prepare("UPDATE `domains` SET `data` = ? WHERE `userid` = ?")
+		_, err = stmt.Exec(data, user)
+		if err != nil {
+			result["error"] = err.Error()
+		}
+	}
+	sendResponse(w, result)
 }
 
 func deleteHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
-	fmt.Println("*** c't SESAM storage server ***")
-	fmt.Println(fmt.Sprintf("Parsing %s ...", CredentialsFile))
-	htpasswd_file, err := os.Open("./" + CredentialsFile)
+	fmt.Println(fmt.Sprintf("*** c't SESAM storage server %s ***", Version))
+	fmt.Println(fmt.Sprintf("Parsing credentials in %s ...", CredentialsFile))
+	htpasswd_file, err := os.Open(CredentialsFile)
 	if err != nil {
 		log.Fatal(err)
 	}
 	entries, err := newHTPasswd(htpasswd_file)
 	htpasswd_file.Close()
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println(fmt.Sprintf("Opening database %s ...", DatabaseFile))
+	db, err = sql.Open("sqlite3", DatabaseFile)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -107,4 +158,5 @@ func main() {
 	mux.HandleFunc("/write", auth(writeHandler, entries, Realm))
 	mux.HandleFunc("/delete", auth(deleteHandler, entries, Realm))
 	srv.ListenAndServeTLS("cert/server.rsa.crt", "cert/server.rsa.key")
+	db.Close()
 }
