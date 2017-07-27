@@ -98,7 +98,6 @@ func writeHandler(w http.ResponseWriter, r *http.Request) {
 	var userid []byte
 	err = stmt.QueryRow(user).Scan(&userid)
 	data := strings.Replace(r.FormValue("data"), " ", "+", -1)
-	fmt.Println(data)
 	if err == sql.ErrNoRows {
 		result["action"] = "INSERT"
 		stmt, err = db.Prepare("INSERT INTO `domains` (userid, data) VALUES(?, ?)")
