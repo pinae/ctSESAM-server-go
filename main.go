@@ -30,15 +30,15 @@ import (
 )
 
 const (
-	Realm                   = "c't SESAM"
-	Version                 = "0.0.1-DEV"
-	Port                    = 8088
-	CredentialsFile         = "./.htpasswd"
-	DatabaseFile            = "./ctsesam.sqlite.db"
+	Realm           = "c't SESAM"
+	Version         = "0.0.1-DEV"
+	Port            = 8088
+	CredentialsFile = "./.htpasswd"
+	DatabaseFile    = "./ctsesam.sqlite.db"
 )
 
 var (
-	db              *sql.DB = nil
+	db *sql.DB = nil
 )
 
 type Page struct {
@@ -47,15 +47,17 @@ type Page struct {
 }
 
 func sendResponse(w http.ResponseWriter, result map[string]interface{}) {
-	var response []byte
 	if result["error"] != nil {
 		result["status"] = "error"
 	}
-	response, err := json.Marshal(result)
-	if err != nil {
-		log.Fatal(err)
+	if len(result) > 0 {
+		var response []byte
+		response, err := json.Marshal(result)
+		if err != nil {
+			log.Fatal(err)
+		}
+		w.Write(response)
 	}
-	w.Write(response)
 }
 
 func indexHandler(w http.ResponseWriter, r *http.Request) {
@@ -68,7 +70,7 @@ func indexHandler(w http.ResponseWriter, r *http.Request) {
 func readHandler(w http.ResponseWriter, r *http.Request) {
 	user, _, _ := r.BasicAuth()
 	result := make(map[string]interface{})
-	stmt, err := db.Prepare("SELECT `data` FROM `domains` WHERE `userid` = ?")
+	stmt, err := db.Prepare("SELECT `data` FROM `domains` WHERE `userid` = ? ORDER BY `created` DESC LIMIT 1")
 	if err != nil {
 		result["error"] = err.Error()
 	}
@@ -94,37 +96,51 @@ func readHandler(w http.ResponseWriter, r *http.Request) {
 func writeHandler(w http.ResponseWriter, r *http.Request) {
 	user, _, _ := r.BasicAuth()
 	result := make(map[string]interface{})
-	stmt, err := db.Prepare("SELECT `userid` FROM `domains` WHERE `userid` = ?")
-	if err != nil {
-		result["error"] = err.Error()
-	}
-	var userid []byte
-	err = stmt.QueryRow(user).Scan(&userid)
-	data := strings.Replace(r.FormValue("data"), " ", "+", -1)
-	if err == sql.ErrNoRows {
-		result["action"] = "INSERT"
-		stmt, err = db.Prepare("INSERT INTO `domains` (userid, data) VALUES(?, ?)")
+	if r.Method == "POST" {
+		data := strings.Replace(r.FormValue("data"), " ", "+", -1)
+		stmt, err := db.Prepare("INSERT INTO `domains` (userid, data) VALUES(?, ?)")
 		_, err = stmt.Exec(user, data)
 		if err != nil {
 			result["error"] = err.Error()
 		}
 	} else {
-		result["action"] = "UPDATE"
-		stmt, err = db.Prepare("UPDATE `domains` SET `data` = ? WHERE `userid` = ?")
-		if err != nil {
-			result["error"] = err.Error()
-		} else {
-			res, err := stmt.Exec(data, user)
+		http.Error(w, "Invalid request method.", 405)
+	}
+	sendResponse(w, result)
+}
+
+func listHandler(w http.ResponseWriter, r *http.Request) {
+	user, _, _ := r.BasicAuth()
+	result := make(map[string]interface{})
+	stmt, err := db.Prepare("SELECT `id`, `created` FROM `domains` WHERE `userid` = ? ORDER BY `created`")
+	if err != nil {
+		result["error"] = err.Error()
+	}
+	rows, err := stmt.Query(user)
+	switch {
+	case err != nil:
+		result["error"] = err.Error()
+	default:
+		res := make([]map[string]interface{}, 0)
+		for rows.Next() {
+			item := make(map[string]interface{})
+			var id int
+			var created string
+			err := rows.Scan(&id, &created)
 			if err != nil {
-				result["error"] = err.Error()
+				log.Fatal(err)
 			} else {
-				fmt.Println(r.FormValue("data"), user)
-				result["rowsaffected"], err = res.RowsAffected()
-				if err != nil {
-					result["error"] = err.Error()
-				}
+				item["id"] = id
+				item["created"] = created
+				res = append(res, item)
 			}
 		}
+		result["result"] = res
+		result["status"] = "ok"
+	}
+	w.Header().Add("Content-Type", "application/json")
+	if result["error"] != nil {
+		result["status"] = "error"
 	}
 	sendResponse(w, result)
 }
@@ -162,7 +178,6 @@ func main() {
 			tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
 			tls.TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA,
 			tls.TLS_RSA_WITH_AES_256_GCM_SHA384,
-			tls.TLS_RSA_WITH_AES_128_CBC_SHA256,
 			tls.TLS_RSA_WITH_AES_256_CBC_SHA,
 		},
 	}
@@ -174,6 +189,7 @@ func main() {
 	}
 	mux.HandleFunc("/", auth(indexHandler, entries, Realm))
 	mux.HandleFunc("/read", auth(readHandler, entries, Realm))
+	mux.HandleFunc("/list", auth(listHandler, entries, Realm))
 	mux.HandleFunc("/write", auth(writeHandler, entries, Realm))
 	mux.HandleFunc("/delete", auth(deleteHandler, entries, Realm))
 	srv.ListenAndServeTLS("cert/server.rsa.crt", "cert/server.rsa.key")
