@@ -112,7 +112,7 @@ func writeHandler(w http.ResponseWriter, r *http.Request) {
 func listHandler(w http.ResponseWriter, r *http.Request) {
 	user, _, _ := r.BasicAuth()
 	result := make(map[string]interface{})
-	stmt, err := db.Prepare("SELECT `id`, `created` FROM `domains` WHERE `userid` = ? ORDER BY `created`")
+	stmt, err := db.Prepare("SELECT `id`, `created`, LENGTH(`data`) FROM `domains` WHERE `userid` = ? ORDER BY `created`")
 	if err != nil {
 		result["error"] = err.Error()
 	}
@@ -126,12 +126,14 @@ func listHandler(w http.ResponseWriter, r *http.Request) {
 			item := make(map[string]interface{})
 			var id int
 			var created string
-			err := rows.Scan(&id, &created)
+			var sz int
+			err := rows.Scan(&id, &created, &sz)
 			if err != nil {
 				log.Fatal(err)
 			} else {
 				item["id"] = id
 				item["created"] = created
+				item["size"] = sz
 				res = append(res, item)
 			}
 		}
