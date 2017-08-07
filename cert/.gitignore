@@ -1,2 +1,8 @@
 *.crt
 *.key
+1000.pem
+index.txt
+index.txt.attr
+index.txt.old
+serial.old
+server.csr

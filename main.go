@@ -51,6 +51,7 @@ func sendResponse(w http.ResponseWriter, result map[string]interface{}) {
 		result["status"] = "error"
 	}
 	if len(result) > 0 {
+		w.Header().Add("Content-Type", "application/json")
 		var response []byte
 		response, err := json.Marshal(result)
 		if err != nil {
@@ -86,7 +87,6 @@ func readHandler(w http.ResponseWriter, r *http.Request) {
 		result["result"] = string(data)
 		result["status"] = "ok"
 	}
-	w.Header().Add("Content-Type", "application/json")
 	if result["error"] != nil {
 		result["status"] = "error"
 	}
@@ -138,7 +138,6 @@ func listHandler(w http.ResponseWriter, r *http.Request) {
 		result["result"] = res
 		result["status"] = "ok"
 	}
-	w.Header().Add("Content-Type", "application/json")
 	if result["error"] != nil {
 		result["status"] = "error"
 	}
@@ -192,6 +191,6 @@ func main() {
 	mux.HandleFunc("/list", auth(listHandler, entries, Realm))
 	mux.HandleFunc("/write", auth(writeHandler, entries, Realm))
 	mux.HandleFunc("/delete", auth(deleteHandler, entries, Realm))
-	srv.ListenAndServeTLS("cert/server.rsa.crt", "cert/server.rsa.key")
+	srv.ListenAndServeTLS("cert/server.crt", "cert/private/server.key")
 	db.Close()
 }
