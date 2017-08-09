@@ -31,10 +31,11 @@ import (
 
 const (
 	Realm           = "c't SESAM"
-	Version         = "0.0.1-DEV"
+	Version         = "0.0.2-DEV"
 	Port            = 8443
 	CredentialsFile = "./.htpasswd"
 	DatabaseFile    = "./ctsesam.sqlite.db"
+	DeleteAfterDays = 90
 )
 
 var (
