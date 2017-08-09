@@ -27,6 +27,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"time"
 )
 
 const (
@@ -48,17 +49,41 @@ type Page struct {
 }
 
 func sendResponse(w http.ResponseWriter, result map[string]interface{}) {
+	w.Header().Add("Content-Type", "application/json")
 	if result["error"] != nil {
 		result["status"] = "error"
 	}
-	if len(result) > 0 {
-		w.Header().Add("Content-Type", "application/json")
-		var response []byte
-		response, err := json.Marshal(result)
-		if err != nil {
-			log.Fatal(err)
+	var response []byte
+	response, err := json.Marshal(result)
+	if err != nil {
+		log.Fatal(err)
+	}
+	w.Write(response)
+}
+
+func deleteOutdatedEntries(days int) (bool, string, int64) {
+	sql := fmt.Sprintf(
+		"DELETE FROM `domains` WHERE "+
+			"`created` < DATETIME('now', 'localtime', '-%d days') AND "+
+			"`created` != (SELECT MAX(`created`) FROM `domains`)",
+		days)
+	res, err := db.Exec(sql)
+	if err != nil {
+		return false, err.Error(), 0
+	}
+	rowsAffected, _ := res.RowsAffected()
+	return true, "ok", rowsAffected
+}
+
+func cleanupJob(quitChannel chan bool) {
+	for doQuit := false; !doQuit; {
+		select {
+		case doQuit = <-quitChannel:
+		default:
 		}
-		w.Write(response)
+		ok, msg, rowsAffected := deleteOutdatedEntries(DeleteAfterDays)
+		fmt.Println(ok, msg, rowsAffected)
+		time.Sleep(12 * time.Hour)
 	}
 }
 
@@ -72,7 +97,11 @@ func indexHandler(w http.ResponseWriter, r *http.Request) {
 func readHandler(w http.ResponseWriter, r *http.Request) {
 	user, _, _ := r.BasicAuth()
 	result := make(map[string]interface{})
-	stmt, err := db.Prepare("SELECT `data` FROM `domains` WHERE `userid` = ? ORDER BY `created` DESC LIMIT 1")
+	stmt, err := db.Prepare(
+		"SELECT `data` FROM `domains` " +
+			"WHERE `userid` = ? " +
+			"ORDER BY `created` DESC " +
+			"LIMIT 1")
 	if err != nil {
 		result["error"] = err.Error()
 	}
@@ -99,7 +128,8 @@ func writeHandler(w http.ResponseWriter, r *http.Request) {
 	result := make(map[string]interface{})
 	if r.Method == "POST" {
 		data := strings.Replace(r.FormValue("data"), " ", "+", -1)
-		stmt, err := db.Prepare("INSERT INTO `domains` (userid, data) VALUES(?, ?)")
+		stmt, err := db.Prepare(
+			"INSERT INTO `domains` (userid, data) VALUES(?, ?)")
 		_, err = stmt.Exec(user, data)
 		if err != nil {
 			result["error"] = err.Error()
@@ -113,33 +143,37 @@ func writeHandler(w http.ResponseWriter, r *http.Request) {
 func listHandler(w http.ResponseWriter, r *http.Request) {
 	user, _, _ := r.BasicAuth()
 	result := make(map[string]interface{})
-	stmt, err := db.Prepare("SELECT `id`, `created`, LENGTH(`data`) FROM `domains` WHERE `userid` = ? ORDER BY `created`")
+	stmt, err := db.Prepare(
+		"SELECT `id`, `created`, LENGTH(`data`) " +
+			"FROM `domains` " +
+			"WHERE `userid` = ? " +
+			"ORDER BY `created`")
 	if err != nil {
 		result["error"] = err.Error()
-	}
-	rows, err := stmt.Query(user)
-	switch {
-	case err != nil:
-		result["error"] = err.Error()
-	default:
-		res := make([]map[string]interface{}, 0)
-		for rows.Next() {
-			item := make(map[string]interface{})
-			var id int
-			var created string
-			var sz int
-			err := rows.Scan(&id, &created, &sz)
-			if err != nil {
-				log.Fatal(err)
-			} else {
-				item["id"] = id
-				item["created"] = created
-				item["size"] = sz
-				res = append(res, item)
+	} else {
+		rows, err := stmt.Query(user)
+		if err != nil {
+			result["error"] = err.Error()
+		} else {
+			res := make([]map[string]interface{}, 0)
+			for rows.Next() {
+				item := make(map[string]interface{})
+				var id int
+				var created string
+				var sz int
+				err := rows.Scan(&id, &created, &sz)
+				if err != nil {
+					log.Fatal(err)
+				} else {
+					item["id"] = id
+					item["created"] = created
+					item["size"] = sz
+					res = append(res, item)
+				}
 			}
+			result["result"] = res
+			result["status"] = "ok"
 		}
-		result["result"] = res
-		result["status"] = "ok"
 	}
 	if result["error"] != nil {
 		result["status"] = "error"
@@ -148,8 +182,18 @@ func listHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func deleteHandler(w http.ResponseWriter, r *http.Request) {
+	user, _, _ := r.BasicAuth()
 	result := make(map[string]interface{})
-	result["action"] = "not implemented yet"
+	res, err := db.Exec("DELETE FROM `domains` WHERE `userid` = ?", user)
+	if err != nil {
+		log.Fatal(err)
+		result["status"] = "error"
+		result["error"] = err.Error()
+	} else {
+		rowsAffected, _ := res.RowsAffected()
+		result["status"] = "ok"
+		result["rowsAffected"] = rowsAffected
+	}
 	sendResponse(w, result)
 }
 
@@ -170,6 +214,10 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	fmt.Println("Starting database cleanup jobs ...")
+	quitChannel := make(chan bool)
+	go cleanupJob(quitChannel)
+
 	fmt.Println(fmt.Sprintf("Starting secure web server on port %d ...", Port))
 	mux := http.NewServeMux()
 	cfg := &tls.Config{
@@ -195,5 +243,7 @@ func main() {
 	mux.HandleFunc("/write", auth(writeHandler, entries, Realm))
 	mux.HandleFunc("/delete", auth(deleteHandler, entries, Realm))
 	srv.ListenAndServeTLS("cert/server.crt", "cert/private/server.key")
+
+	quitChannel <- true
 	db.Close()
 }
