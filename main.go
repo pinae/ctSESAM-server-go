@@ -32,7 +32,7 @@ import (
 const (
 	Realm           = "c't SESAM"
 	Version         = "0.0.1-DEV"
-	Port            = 8088
+	Port            = 8443
 	CredentialsFile = "./.htpasswd"
 	DatabaseFile    = "./ctsesam.sqlite.db"
 )
