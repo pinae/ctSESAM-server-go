@@ -32,7 +32,7 @@ import (
 
 const (
 	Realm           = "c't SESAM"
-	Version         = "0.0.2-DEV"
+	Version         = "0.1.0"
 	Port            = 8443
 	CredentialsFile = "./.htpasswd"
 	DatabaseFile    = "./ctsesam.sqlite.db"
@@ -214,7 +214,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	fmt.Println("Starting database cleanup jobs ...")
+	fmt.Println("Starting database cleanup job ...")
 	quitChannel := make(chan bool)
 	go cleanupJob(quitChannel)
 
