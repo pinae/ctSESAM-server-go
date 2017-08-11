@@ -37,6 +37,7 @@ const (
 	CredentialsFile = "./.htpasswd"
 	DatabaseFile    = "./ctsesam.sqlite.db"
 	DeleteAfterDays = 90
+	LogFilename     = "SESAM.log"
 )
 
 var (
@@ -199,6 +200,15 @@ func deleteHandler(w http.ResponseWriter, r *http.Request) {
 
 func main() {
 	fmt.Println(fmt.Sprintf("*** c't SESAM storage server %s ***", Version))
+
+	fmt.Println(fmt.Sprintf("Opening log file %s ...", LogFilename))
+	f, err := os.OpenFile("testlogfile", os.O_RDWR | os.O_CREATE | os.O_APPEND, 0666)
+	if err != nil {
+	    t.Fatalf("error opening file: %v", err)
+	}
+	defer f.Close()
+	log.SetOutput(f)
+
 	fmt.Println(fmt.Sprintf("Parsing credentials in %s ...", CredentialsFile))
 	htpasswd_file, err := os.Open(CredentialsFile)
 	if err != nil {
@@ -214,6 +224,8 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	defer db.Close()
+
 	fmt.Println("Starting database cleanup job ...")
 	quitChannel := make(chan bool)
 	go cleanupJob(quitChannel)
@@ -245,5 +257,4 @@ func main() {
 	srv.ListenAndServeTLS("cert/server.crt", "cert/private/server.key")
 
 	quitChannel <- true
-	db.Close()
 }
