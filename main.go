@@ -26,7 +26,9 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -34,6 +36,10 @@ const (
 	Realm           = "c't SESAM"
 	Version         = "0.1.0"
 	Port            = 8443
+	IndexReqUrl     = "/index"
+	ListReqUrl      = "/list"
+	ReadReqUrl      = "/read"
+	WriteReqUrl     = "/write"
 	CredentialsFile = "./.htpasswd"
 	DatabaseFile    = "./ctsesam.sqlite.db"
 	DeleteAfterDays = 90
@@ -57,7 +63,7 @@ func sendResponse(w http.ResponseWriter, result map[string]interface{}) {
 	var response []byte
 	response, err := json.Marshal(result)
 	if err != nil {
-		log.Fatal(err)
+		log.Print(err)
 	}
 	w.Write(response)
 }
@@ -83,13 +89,18 @@ func cleanupJob(quitChannel chan bool) {
 		default:
 		}
 		ok, msg, rowsAffected := deleteOutdatedEntries(DeleteAfterDays)
-		fmt.Println(ok, msg, rowsAffected)
+		if ok {
+			log.Printf("Deleted %d outdated entries.", rowsAffected)
+		} else {
+			log.Printf("Deleting outdated entries failed: %s", msg)
+		}
 		time.Sleep(12 * time.Hour)
 	}
 }
 
 func indexHandler(w http.ResponseWriter, r *http.Request) {
 	user, _, _ := r.BasicAuth()
+	log.Printf("%s request from %s (%s)", IndexReqUrl, user, r.Host)
 	p := &Page{r.Host, user}
 	t, _ := template.ParseFiles("templates/default.tpl.html")
 	t.Execute(w, p)
@@ -97,6 +108,7 @@ func indexHandler(w http.ResponseWriter, r *http.Request) {
 
 func readHandler(w http.ResponseWriter, r *http.Request) {
 	user, _, _ := r.BasicAuth()
+	log.Printf("%s request from %s (%s)", ReadReqUrl, user, r.Host)
 	result := make(map[string]interface{})
 	stmt, err := db.Prepare(
 		"SELECT `data` FROM `domains` " +
@@ -126,6 +138,7 @@ func readHandler(w http.ResponseWriter, r *http.Request) {
 
 func writeHandler(w http.ResponseWriter, r *http.Request) {
 	user, _, _ := r.BasicAuth()
+	log.Printf("%s request from %s (%s)", WriteReqUrl, user, r.Host)
 	result := make(map[string]interface{})
 	if r.Method == "POST" {
 		data := strings.Replace(r.FormValue("data"), " ", "+", -1)
@@ -143,6 +156,7 @@ func writeHandler(w http.ResponseWriter, r *http.Request) {
 
 func listHandler(w http.ResponseWriter, r *http.Request) {
 	user, _, _ := r.BasicAuth()
+	log.Printf("%s request from %s (%s)", ListReqUrl, user, r.Host)
 	result := make(map[string]interface{})
 	stmt, err := db.Prepare(
 		"SELECT `id`, `created`, LENGTH(`data`) " +
@@ -182,29 +196,13 @@ func listHandler(w http.ResponseWriter, r *http.Request) {
 	sendResponse(w, result)
 }
 
-func deleteHandler(w http.ResponseWriter, r *http.Request) {
-	user, _, _ := r.BasicAuth()
-	result := make(map[string]interface{})
-	res, err := db.Exec("DELETE FROM `domains` WHERE `userid` = ?", user)
-	if err != nil {
-		log.Fatal(err)
-		result["status"] = "error"
-		result["error"] = err.Error()
-	} else {
-		rowsAffected, _ := res.RowsAffected()
-		result["status"] = "ok"
-		result["rowsAffected"] = rowsAffected
-	}
-	sendResponse(w, result)
-}
-
 func main() {
 	fmt.Println(fmt.Sprintf("*** c't SESAM storage server %s ***", Version))
 
 	fmt.Println(fmt.Sprintf("Opening log file %s ...", LogFilename))
-	f, err := os.OpenFile("testlogfile", os.O_RDWR | os.O_CREATE | os.O_APPEND, 0666)
+	f, err := os.OpenFile(LogFilename, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
 	if err != nil {
-	    t.Fatalf("error opening file: %v", err)
+		log.Fatalf("error opening file: %v", err)
 	}
 	defer f.Close()
 	log.SetOutput(f)
@@ -249,12 +247,19 @@ func main() {
 		TLSConfig:    cfg,
 		TLSNextProto: make(map[string]func(*http.Server, *tls.Conn, http.Handler), 0),
 	}
-	mux.HandleFunc("/", auth(indexHandler, entries, Realm))
-	mux.HandleFunc("/read", auth(readHandler, entries, Realm))
-	mux.HandleFunc("/list", auth(listHandler, entries, Realm))
-	mux.HandleFunc("/write", auth(writeHandler, entries, Realm))
-	mux.HandleFunc("/delete", auth(deleteHandler, entries, Realm))
-	srv.ListenAndServeTLS("cert/server.crt", "cert/private/server.key")
+	mux.HandleFunc(ReadReqUrl, auth(readHandler, entries, Realm))
+	mux.HandleFunc(ListReqUrl, auth(listHandler, entries, Realm))
+	mux.HandleFunc(WriteReqUrl, auth(writeHandler, entries, Realm))
+	mux.HandleFunc(IndexReqUrl, auth(indexHandler, entries, Realm))
 
-	quitChannel <- true
+	intrChan := make(chan os.Signal, 1)
+	signal.Notify(intrChan, os.Interrupt, syscall.SIGTERM)
+	go func() {
+		sig := <-intrChan
+		log.Printf("Captured %v signal.", sig)
+		db.Close()
+		os.Exit(1)
+	}()
+	log.Println("Started.")
+	srv.ListenAndServeTLS("cert/server.crt", "cert/private/server.key")
 }
