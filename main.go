@@ -27,6 +27,9 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"regexp"
+	"runtime"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -34,7 +37,7 @@ import (
 
 const (
 	Realm           = "c't SESAM"
-	Version         = "0.1.0"
+	Version         = "0.1.1"
 	Port            = 8443
 	IndexReqUrl     = "/index"
 	ListReqUrl      = "/list"
@@ -197,9 +200,18 @@ func listHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
-	fmt.Println(fmt.Sprintf("*** c't SESAM storage server %s ***", Version))
+	fmt.Printf("*** c't SESAM storage server %s (%s)\n", Version, runtime.Version())
+	fmt.Println("Copyright (c) 2017 Oliver Lau <ola@ct.de>.\nAll rights reserved.\n")
+	r, _ := regexp.Compile("(\\d+)\\.(\\d+)")
+	ver := r.FindStringSubmatch(runtime.Version())
+	GoVersionHi := 0
+	GoVersionLo := 0
+	if len(ver) >= 3 {
+		GoVersionHi, _ = strconv.Atoi(ver[1])
+		GoVersionLo, _ = strconv.Atoi(ver[2])
+	}
 
-	fmt.Println(fmt.Sprintf("Opening log file %s ...", LogFilename))
+	fmt.Printf("Opening log file %s ...\n", LogFilename)
 	f, err := os.OpenFile(LogFilename, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
 	if err != nil {
 		log.Fatalf("error opening file: %v", err)
@@ -207,7 +219,7 @@ func main() {
 	defer f.Close()
 	log.SetOutput(f)
 
-	fmt.Println(fmt.Sprintf("Parsing credentials in %s ...", CredentialsFile))
+	fmt.Printf("Parsing credentials in %s ...\n", CredentialsFile)
 	htpasswd_file, err := os.Open(CredentialsFile)
 	if err != nil {
 		log.Fatal(err)
@@ -217,7 +229,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	fmt.Println(fmt.Sprintf("Opening database %s ...", DatabaseFile))
+	fmt.Printf("Opening database %s ...\n", DatabaseFile)
 	db, err = sql.Open("sqlite3", DatabaseFile)
 	if err != nil {
 		log.Fatal(err)
@@ -228,7 +240,7 @@ func main() {
 	quitChannel := make(chan bool)
 	go cleanupJob(quitChannel)
 
-	fmt.Println(fmt.Sprintf("Starting secure web server on port %d ...", Port))
+	fmt.Printf("Starting secure web server on port %d ...\n", Port)
 	mux := http.NewServeMux()
 	cfg := &tls.Config{
 		MinVersion:               tls.VersionTLS10,
@@ -257,9 +269,14 @@ func main() {
 	go func() {
 		sig := <-intrChan
 		log.Printf("Captured %v signal.", sig)
-		db.Close()
-		os.Exit(1)
+		if GoVersionHi > 1 || (GoVersionHi == 1 && GoVersionLo >= 8) {
+			srv.Shutdown(nil)
+		} else {
+			os.Exit(1)
+			db.Close()
+		}
 	}()
-	log.Println("Started.")
+	log.Println("Starting.")
 	srv.ListenAndServeTLS("cert/server.crt", "cert/private/server.key")
+	log.Println("Ending.")
 }
