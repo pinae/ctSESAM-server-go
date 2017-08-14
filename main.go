@@ -27,9 +27,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"regexp"
 	"runtime"
-	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -202,14 +200,6 @@ func listHandler(w http.ResponseWriter, r *http.Request) {
 func main() {
 	fmt.Printf("*** c't SESAM storage server %s (%s)\n", Version, runtime.Version())
 	fmt.Println("Copyright (c) 2017 Oliver Lau <ola@ct.de>.\nAll rights reserved.\n")
-	r, _ := regexp.Compile("(\\d+)\\.(\\d+)")
-	ver := r.FindStringSubmatch(runtime.Version())
-	GoVersionHi := 0
-	GoVersionLo := 0
-	if len(ver) >= 3 {
-		GoVersionHi, _ = strconv.Atoi(ver[1])
-		GoVersionLo, _ = strconv.Atoi(ver[2])
-	}
 
 	fmt.Printf("Opening log file %s ...\n", LogFilename)
 	f, err := os.OpenFile(LogFilename, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
@@ -269,14 +259,12 @@ func main() {
 	go func() {
 		sig := <-intrChan
 		log.Printf("Captured %v signal.", sig)
-		if GoVersionHi > 1 || (GoVersionHi == 1 && GoVersionLo >= 8) {
-			srv.Shutdown(nil)
-		} else {
-			os.Exit(1)
-			db.Close()
-		}
+		srv.Shutdown(nil)
 	}()
 	log.Println("Starting.")
-	srv.ListenAndServeTLS("cert/server.crt", "cert/private/server.key")
+	err = srv.ListenAndServeTLS("cert/server.crt", "cert/private/server.key")
+	if err != nil {
+		fmt.Printf("ListenAndServeTLS() failed: %s\n", err.Error())
+	}
 	log.Println("Ending.")
 }
