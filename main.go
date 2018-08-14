@@ -1,5 +1,5 @@
 /*
-   Copyright (c) Oliver Lau <ola@ct.de>, Heise Medien GmbH & Co. KG
+   Copyright (c) 2017-2018 Oliver Lau <ola@ct.de>, Heise Medien GmbH & Co. KG
 
    Licensed under the Apache License, Version 2.0 (the "License");
    you may not use this file except in compliance with the License.
@@ -21,7 +21,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	_ "github.com/mattn/go-sqlite3"
 	"html/template"
 	"log"
 	"net/http"
@@ -31,27 +30,29 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	_ "github.com/mattn/go-sqlite3"
 )
 
 const (
-	Realm           = "c't SESAM"
-	Version         = "0.1.1"
-	Port            = 8443
-	IndexReqUrl     = "/index"
-	ListReqUrl      = "/list"
-	ReadReqUrl      = "/read"
-	WriteReqUrl     = "/write"
-	CredentialsFile = "./.htpasswd"
-	DatabaseFile    = "./ctsesam.sqlite.db"
-	DeleteAfterDays = 90
-	LogFilename     = "SESAM.log"
+	realm           = "c't SESAM"
+	version         = "0.1.1"
+	port            = 8443
+	indexReqURL     = "/index"
+	listReqURL      = "/list"
+	readReqURL      = "/read"
+	writeReqURL     = "/write"
+	credentialsFile = "./.htpasswd"
+	databaseFile    = "./ctsesam.sqlite.db"
+	deleteAfterDays = 90
+	logFilename     = "SESAM.log"
 )
 
 var (
-	db *sql.DB = nil
+	db *sql.DB
 )
 
-type Page struct {
+type _Page struct {
 	Host string
 	User string
 }
@@ -89,7 +90,7 @@ func cleanupJob(quitChannel chan bool) {
 		case doQuit = <-quitChannel:
 		default:
 		}
-		ok, msg, rowsAffected := deleteOutdatedEntries(DeleteAfterDays)
+		ok, msg, rowsAffected := deleteOutdatedEntries(deleteAfterDays)
 		if ok {
 			log.Printf("Deleted %d outdated entries.", rowsAffected)
 		} else {
@@ -101,15 +102,15 @@ func cleanupJob(quitChannel chan bool) {
 
 func indexHandler(w http.ResponseWriter, r *http.Request) {
 	user, _, _ := r.BasicAuth()
-	log.Printf("%s request from %s (%s)", IndexReqUrl, user, r.Host)
-	p := &Page{r.Host, user}
+	log.Printf("%s request from %s (%s)", indexReqURL, user, r.Host)
+	p := &_Page{r.Host, user}
 	t, _ := template.ParseFiles("templates/default.tpl.html")
 	t.Execute(w, p)
 }
 
 func readHandler(w http.ResponseWriter, r *http.Request) {
 	user, _, _ := r.BasicAuth()
-	log.Printf("%s request from %s (%s)", ReadReqUrl, user, r.Host)
+	log.Printf("%s request from %s (%s)", readReqURL, user, r.Host)
 	result := make(map[string]interface{})
 	stmt, err := db.Prepare(
 		"SELECT `data` FROM `domains` " +
@@ -139,7 +140,7 @@ func readHandler(w http.ResponseWriter, r *http.Request) {
 
 func writeHandler(w http.ResponseWriter, r *http.Request) {
 	user, _, _ := r.BasicAuth()
-	log.Printf("%s request from %s (%s)", WriteReqUrl, user, r.Host)
+	log.Printf("%s request from %s (%s)", writeReqURL, user, r.Host)
 	result := make(map[string]interface{})
 	if r.Method == "POST" {
 		data := strings.Replace(r.FormValue("data"), " ", "+", -1)
@@ -157,7 +158,7 @@ func writeHandler(w http.ResponseWriter, r *http.Request) {
 
 func listHandler(w http.ResponseWriter, r *http.Request) {
 	user, _, _ := r.BasicAuth()
-	log.Printf("%s request from %s (%s)", ListReqUrl, user, r.Host)
+	log.Printf("%s request from %s (%s)", listReqURL, user, r.Host)
 	result := make(map[string]interface{})
 	stmt, err := db.Prepare(
 		"SELECT `id`, `created`, LENGTH(`data`) " +
@@ -198,29 +199,31 @@ func listHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
-	fmt.Printf("*** c't SESAM storage server %s (%s)\n", Version, runtime.Version())
-	fmt.Println("Copyright (c) 2017 Oliver Lau <ola@ct.de>.\nAll rights reserved.\n")
+	fmt.Printf("*** c't SESAM storage server %s (%s)\n", version, runtime.Version())
+	fmt.Println("Copyright (c) 2017-2018 Oliver Lau <ola@ct.de>")
+	fmt.Println("All rights reserved.")
+	fmt.Println()
 
-	fmt.Printf("Opening log file %s ...\n", LogFilename)
-	f, err := os.OpenFile(LogFilename, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
+	fmt.Printf("Opening log file %s ...\n", logFilename)
+	f, err := os.OpenFile(logFilename, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
 	if err != nil {
 		log.Fatalf("error opening file: %v", err)
 	}
 	defer f.Close()
 	log.SetOutput(f)
 
-	fmt.Printf("Parsing credentials in %s ...\n", CredentialsFile)
-	htpasswd_file, err := os.Open(CredentialsFile)
+	fmt.Printf("Parsing credentials in %s ...\n", credentialsFile)
+	htpasswdFile, err := os.Open(credentialsFile)
 	if err != nil {
 		log.Fatal(err)
 	}
-	entries, err := newHTPasswd(htpasswd_file)
-	htpasswd_file.Close()
+	entries, err := newHTPasswd(htpasswdFile)
+	htpasswdFile.Close()
 	if err != nil {
 		log.Fatal(err)
 	}
-	fmt.Printf("Opening database %s ...\n", DatabaseFile)
-	db, err = sql.Open("sqlite3", DatabaseFile)
+	fmt.Printf("Opening database %s ...\n", databaseFile)
+	db, err = sql.Open("sqlite3", databaseFile)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -230,7 +233,7 @@ func main() {
 	quitChannel := make(chan bool)
 	go cleanupJob(quitChannel)
 
-	fmt.Printf("Starting secure web server on port %d ...\n", Port)
+	fmt.Printf("Starting secure web server on port %d ...\n", port)
 	mux := http.NewServeMux()
 	cfg := &tls.Config{
 		MinVersion:               tls.VersionTLS10,
@@ -244,22 +247,21 @@ func main() {
 		},
 	}
 	srv := &http.Server{
-		Addr:         fmt.Sprintf(":%d", Port),
+		Addr:         fmt.Sprintf(":%d", port),
 		Handler:      mux,
 		TLSConfig:    cfg,
 		TLSNextProto: make(map[string]func(*http.Server, *tls.Conn, http.Handler), 0),
 	}
-	mux.HandleFunc(ReadReqUrl, auth(readHandler, entries, Realm))
-	mux.HandleFunc(ListReqUrl, auth(listHandler, entries, Realm))
-	mux.HandleFunc(WriteReqUrl, auth(writeHandler, entries, Realm))
-	mux.HandleFunc(IndexReqUrl, auth(indexHandler, entries, Realm))
+	mux.HandleFunc(readReqURL, auth(readHandler, entries, realm))
+	mux.HandleFunc(listReqURL, auth(listHandler, entries, realm))
+	mux.HandleFunc(writeReqURL, auth(writeHandler, entries, realm))
+	mux.HandleFunc(indexReqURL, auth(indexHandler, entries, realm))
 
 	intrChan := make(chan os.Signal, 1)
 	signal.Notify(intrChan, os.Interrupt, syscall.SIGTERM)
 	go func() {
 		sig := <-intrChan
 		log.Printf("Captured %v signal.", sig)
-		srv.Shutdown(nil)
 	}()
 	log.Println("Starting.")
 	err = srv.ListenAndServeTLS("cert/server.crt", "cert/private/server.key")
