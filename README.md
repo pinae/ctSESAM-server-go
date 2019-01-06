@@ -8,13 +8,13 @@ _c't SESAM Storage Server_ (the _SESAM server_) is a data store for [c't SESAM](
 
 ### Prerequisites
 
-You need a Unix machine with SQLite 3, Go 1.11 (or newer). How to install these components depends on your operating system (one the many Linux flavors, macOS etc.)
+You need a Unix machine with Go 1.11 (or newer) and SQLite 3. It depends on your operating system (one the many Linux flavors, macOS etc.) how to install these components.
 
-You also need some extra Go packages: github.com/mattn/go-sqlite3, github.com/abbot/go-http-auth and golang.org/x/crypto/bcrypt. You can easily `go get` them, e.g. `go get github.com/mattn/go-sqlite3`.
+You also need some extra Go packages: "github.com/mattn/go-sqlite3", "github.com/abbot/go-http-auth" and "golang.org/x/crypto/bcrypt". You can easily `go get` them, e.g. `go get github.com/mattn/go-sqlite3`.
 
 ### Get the code
 
-Clone the _SESAM server_ repository in a directory of your choice:
+Clone the _SESAM server_ repository into a directory of your choice:
 
 ```
 git clone https://github.com/ola-ct/ctSESAM-server-go.git
@@ -22,7 +22,7 @@ git clone https://github.com/ola-ct/ctSESAM-server-go.git
 
 This creates the directory ctSESAM-server-go containing the &ast;.go files with the server's code.
 
-### Add a user
+### Add user
 
 To restrict access _SESAM server_ authenticates users by means of [HTTP Basic authentication](https://en.wikipedia.org/wiki/Basic_access_authentication). The credentials are read from an Apache [.htpasswd](https://en.wikipedia.org/wiki/.htpasswd) file which must be placed in the top-level directory of the _SESAM server_, i.e. the directory you created in the previous step. To create a file for the user `demo` execute the following shell command:
 
@@ -44,12 +44,12 @@ The easiest way to obtain these files is by using [acme.sh](https://github.com/N
 
 If you want to use other file names please edit the call to `srv.ListenAndServeTLS("cert/server.crt", "cert/server.key")` in main.go.
 
-## Running
+## Run _SESAM server_
 
 You can now start the server with
 
 ```
-go run auth.go main.go
+./run.sh
 ```
 
 _SESAM server_ should print something like this:
