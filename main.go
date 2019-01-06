@@ -36,7 +36,7 @@ import (
 
 const (
 	realm           = "c't SESAM"
-	version         = "0.1.1"
+	version         = "0.1.2"
 	port            = 8443
 	indexReqURL     = "/index"
 	listReqURL      = "/list"
