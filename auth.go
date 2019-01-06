@@ -22,11 +22,12 @@ import (
 	"bufio"
 	"errors"
 	"fmt"
-	_ "github.com/abbot/go-http-auth"
-	"golang.org/x/crypto/bcrypt"
 	"io"
 	"net/http"
 	"strings"
+
+	_ "github.com/abbot/go-http-auth"
+	"golang.org/x/crypto/bcrypt"
 )
 
 type HTPasswd struct {
