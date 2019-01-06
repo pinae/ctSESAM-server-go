@@ -264,7 +264,7 @@ func main() {
 		log.Printf("Captured %v signal.", sig)
 	}()
 	log.Println("Starting.")
-	err = srv.ListenAndServeTLS("cert/server.crt", "cert/private/server.key")
+	err = srv.ListenAndServeTLS("cert/server.crt", "cert/server.key")
 	if err != nil {
 		fmt.Printf("ListenAndServeTLS() failed: %s\n", err.Error())
 	}
