@@ -273,6 +273,7 @@ func main() {
 	go func() {
 		sig := <-intrChan
 		log.Printf("Captured %v signal.", sig)
+		srv.Shutdown(nil)
 	}()
 	log.Println("Starting.")
 	err = srv.ListenAndServeTLS("cert/server.crt", "cert/server.key")
