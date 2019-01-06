@@ -91,7 +91,7 @@ func auth(handler http.HandlerFunc, credentials *HTPasswd, realm string) http.Ha
 		if err != nil {
 			w.Header().Set("WWW-Authenticate", `Basic realm="`+realm+`"`)
 			w.WriteHeader(http.StatusUnauthorized)
-			w.Write([]byte("Unauthorized.\n"))
+			w.Write([]byte("{\"status\":\"Unauthorized.\"}"))
 			return
 		}
 		handler(w, r)
