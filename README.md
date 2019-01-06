@@ -34,11 +34,15 @@ You're then asked to type in the desired password (twice).
 
 Option `-B` enables [bcrypt](https://en.wikipedia.org/wiki/Bcrypt) hashing of the password. SESAM server doesn't support any other hash methods.
 
+If your .htpasswd file has a different name or is stored in another location, you can change the value of the constant `credentialsFile` in main.go accordingly.
+
 ### Install SSL certificate
 
 Save your SSL server certificate (as "server.crt") and the accompanying server key (as "server.key") into the subdirectory "cert".
 
 The easiest way to obtain these files is by using [acme.sh](https://github.com/Neilpang/acme.sh).
+
+If you want to use other file names please edit the call to `srv.ListenAndServeTLS("cert/server.crt", "cert/server.key")` in main.go.
 
 ## Running
 
@@ -62,7 +66,7 @@ Starting database cleanup job ...
 Starting secure web server on port 8443 ...
 ```
 
-As you may have already realized _SESAM server_ launches its HTTPS listener on port 8443.
+As you may have already realized _SESAM server_ launches its HTTPS listener on port 8443. If that port is already occupied by another service, you can change the port by editing the value of the constant `port` in main.go.
 
 ---
 
