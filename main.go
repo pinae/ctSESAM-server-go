@@ -43,9 +43,16 @@ const (
 	readReqURL      = "/read"
 	writeReqURL     = "/write"
 	credentialsFile = "./.htpasswd"
-	databaseFile    = "./ctsesam.sqlite.db"
 	deleteAfterDays = 90
 	logFilename     = "SESAM.log"
+	databaseFile    = "./ctsesam.sqlite.db"
+	sqlCreateStmt   = "CREATE TABLE IF NOT EXISTS `domains` (" +
+		"`id` INTEGER PRIMARY KEY AUTOINCREMENT, " +
+		"`userid` TEXT NOT NULL, " +
+		"`created` INTEGER(4) DEFAULT (DATETIME('now', 'localtime')), " +
+		"`data` BLOB " +
+		");" +
+		"CREATE INDEX IF NOT EXISTS `userid_idx` ON `domains` (`userid`);"
 )
 
 var (
@@ -226,6 +233,10 @@ func main() {
 	db, err = sql.Open("sqlite3", databaseFile)
 	if err != nil {
 		log.Fatal(err)
+	}
+	_, err = db.Exec(sqlCreateStmt)
+	if err != nil {
+		log.Fatalf("error creating database: %v", err)
 	}
 	defer db.Close()
 
