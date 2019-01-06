@@ -4,3 +4,5 @@
 tmp/*
 SESAM.log
 cert/*
+*.code-workspace
+
