@@ -70,7 +70,22 @@ As you can see _SESAM server_ launches its HTTPS listener on port 8443. If that 
 
 ## Configuration
 
+There are three Environment variables you may use to configure the server without changing the code:
+
+| Variable | Explanation |
+|----------|-------------|
+| `LOG_TO_CONSOLE=yes` | Do not write into `SESAM.log` |
+| `BEHIND_PROXY=yes` | Skip tls and start a simple http server |
+| `LISTEN_ADDR=80` | Port used with the simple http server (if unset this is set to `8080`) |
+
 A future release of _SESAM server_ will let you configure the port and the location of the .htpasswd and certificate files with the aid of a configuration file.
+
+## Initialize the database prior to the first run
+
+If you want to initialize the database before the first run (you do not have to) you can run:
+```shell
+sqlite3 ctsesam.sqlite.db < init/install.sql
+```
 
 ---
 
