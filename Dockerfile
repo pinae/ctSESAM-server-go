@@ -1,9 +1,10 @@
-FROM golang:onbuild
-RUN mkdir /app 
-ADD . /app/ 
+FROM golang:bullseye
+RUN mkdir /app
+ADD . /app/
 WORKDIR /app
-EXPOSE 8443
-RUN yum update
-RUN yum install -y sqlite3
+EXPOSE 80
+RUN apt-get update
+RUN apt-get install -y sqlite3
+RUN go get github.com/mattn/go-sqlite3 && go get github.com/abbot/go-http-auth && go get golang.org/x/crypto/bcrypt
 RUN go build -o ctSESAM-storage-server .
 CMD ["/app/ctSESAM-storage-server"]
