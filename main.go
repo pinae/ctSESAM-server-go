@@ -28,6 +28,7 @@ import (
 	"os/signal"
 	"runtime"
 	"strings"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -211,13 +212,16 @@ func main() {
 	fmt.Println("All rights reserved.")
 	fmt.Println()
 
-	fmt.Printf("Opening log file %s ...\n", logFilename)
-	f, err := os.OpenFile(logFilename, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
-	if err != nil {
-		log.Fatalf("error opening file: %v", err)
+    fmt.Printf(os.Getenv("LOG_TO_CONSOLE"))
+    if os.Getenv("LOG_TO_CONSOLE") != "yes" {
+        fmt.Printf("Opening log file %s ...\n", logFilename)
+        f, err := os.OpenFile(logFilename, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
+        if err != nil {
+            log.Fatalf("error opening file: %v", err)
+        }
+        defer f.Close()
+        log.SetOutput(f)
 	}
-	defer f.Close()
-	log.SetOutput(f)
 
 	fmt.Printf("Parsing credentials in %s ...\n", credentialsFile)
 	htpasswdFile, err := os.Open(credentialsFile)
@@ -244,41 +248,67 @@ func main() {
 	quitChannel := make(chan bool)
 	go cleanupJob(quitChannel)
 
-	fmt.Printf("Starting secure web server on port %d ...\n", port)
-	mux := http.NewServeMux()
-	cfg := &tls.Config{
-		MinVersion:               tls.VersionTLS10,
-		CurvePreferences:         []tls.CurveID{tls.CurveP521, tls.CurveP384, tls.CurveP256},
-		PreferServerCipherSuites: true,
-		CipherSuites: []uint16{
-			tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
-			tls.TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA,
-			tls.TLS_RSA_WITH_AES_256_GCM_SHA384,
-			tls.TLS_RSA_WITH_AES_256_CBC_SHA,
-		},
-	}
-	srv := &http.Server{
-		Addr:         fmt.Sprintf(":%d", port),
-		Handler:      mux,
-		TLSConfig:    cfg,
-		TLSNextProto: make(map[string]func(*http.Server, *tls.Conn, http.Handler), 0),
-	}
-	mux.HandleFunc(readReqURL, auth(readHandler, entries, realm))
-	mux.HandleFunc(listReqURL, auth(listHandler, entries, realm))
-	mux.HandleFunc(writeReqURL, auth(writeHandler, entries, realm))
-	mux.HandleFunc(indexReqURL, auth(indexHandler, entries, realm))
+    if os.Getenv("BEHIND_PROXY") == "yes" {
+        listenAddr := os.Getenv("LISTEN_ADDR")
+        if len(listenAddr) == 0 {
+            listenAddr = "8080"
+        }
+        var http_port, err = strconv.Atoi(listenAddr)
+        if err != nil {
+            log.Fatal("Error during the conversion of LISTEN_ADDR to int.")
+        }
+        fmt.Printf("Starting web server on port %d ...\n", http_port)
+        mux := http.NewServeMux()
+        srv := &http.Server{
+            Addr:         fmt.Sprintf(":%d", http_port),
+            Handler:      mux,
+        }
+        mux.HandleFunc(readReqURL, auth(readHandler, entries, realm))
+        mux.HandleFunc(listReqURL, auth(listHandler, entries, realm))
+        mux.HandleFunc(writeReqURL, auth(writeHandler, entries, realm))
+        mux.HandleFunc(indexReqURL, auth(indexHandler, entries, realm))
+        err = srv.ListenAndServe()
+        if err != nil {
+            fmt.Printf("ListenAndServeTLS() failed: %s\n", err.Error())
+        }
+        log.Println("Ending.")
+    } else {
+        fmt.Printf("Starting secure web server on port %d ...\n", port)
+        mux := http.NewServeMux()
+        cfg := &tls.Config{
+            MinVersion:               tls.VersionTLS10,
+            CurvePreferences:         []tls.CurveID{tls.CurveP521, tls.CurveP384, tls.CurveP256},
+            PreferServerCipherSuites: true,
+            CipherSuites: []uint16{
+                tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
+                tls.TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA,
+                tls.TLS_RSA_WITH_AES_256_GCM_SHA384,
+                tls.TLS_RSA_WITH_AES_256_CBC_SHA,
+            },
+        }
+        srv := &http.Server{
+            Addr:         fmt.Sprintf(":%d", port),
+            Handler:      mux,
+            TLSConfig:    cfg,
+            TLSNextProto: make(map[string]func(*http.Server, *tls.Conn, http.Handler), 0),
+        }
+        mux.HandleFunc(readReqURL, auth(readHandler, entries, realm))
+        mux.HandleFunc(listReqURL, auth(listHandler, entries, realm))
+        mux.HandleFunc(writeReqURL, auth(writeHandler, entries, realm))
+        mux.HandleFunc(indexReqURL, auth(indexHandler, entries, realm))
 
-	intrChan := make(chan os.Signal, 1)
-	signal.Notify(intrChan, os.Interrupt, syscall.SIGTERM)
-	go func() {
-		sig := <-intrChan
-		log.Printf("Captured %v signal.", sig)
-		srv.Shutdown(nil)
-	}()
-	log.Println("Starting.")
-	err = srv.ListenAndServeTLS("cert/server.crt", "cert/server.key")
-	if err != nil {
-		fmt.Printf("ListenAndServeTLS() failed: %s\n", err.Error())
+        intrChan := make(chan os.Signal, 1)
+        signal.Notify(intrChan, os.Interrupt, syscall.SIGTERM)
+        go func() {
+            sig := <-intrChan
+            log.Printf("Captured %v signal.", sig)
+            srv.Shutdown(nil)
+        }()
+        log.Println("Starting.")
+        err = srv.ListenAndServeTLS("cert/server.crt", "cert/server.key")
+        if err != nil {
+            fmt.Printf("ListenAndServeTLS() failed: %s\n", err.Error())
+        }
+        log.Println("Ending.")
 	}
-	log.Println("Ending.")
 }
